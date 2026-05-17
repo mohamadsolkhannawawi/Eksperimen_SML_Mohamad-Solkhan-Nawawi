@@ -1,0 +1,76 @@
+name: Automated Preprocessing Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  preprocessing:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.12.7
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12.7'
+
+      - name: Check Env
+        run: |
+          python --version
+          pip --version
+
+      - name: Install Dependencies
+        run: |
+          pip install pandas numpy scikit-learn kaggle
+
+      - name: Download Dataset from Kaggle
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          mkdir -p ~/.kaggle
+          echo '{"username":"${{ secrets.KAGGLE_USERNAME }}","key":"${{ secrets.KAGGLE_KEY }}"}' > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+          kaggle datasets download -d mirichoi0218/insurance --unzip -p ./
+
+      - name: Run Preprocessing
+        run: |
+          python preprocessing/automate_Mohamad-Solkhan-Nawawi.py \
+            --input insurance.csv \
+            --output insurance_preprocessing \
+            --test_size 0.2 \
+            --random_state 42
+
+      - name: Verify Output
+        run: |
+          echo "=== Hasil Preprocessing ==="
+          ls -la insurance_preprocessing/
+          python -c "
+          import pandas as pd
+          train = pd.read_csv('insurance_preprocessing/train.csv')
+          test = pd.read_csv('insurance_preprocessing/test.csv')
+          print(f'Train shape: {train.shape}')
+          print(f'Test shape: {test.shape}')
+          print(f'Columns: {list(train.columns)}')
+          "
+
+      - name: Upload Preprocessed Dataset as Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: insurance_preprocessing
+          path: insurance_preprocessing/
+          retention-days: 30
+
+      - name: Commit Preprocessed Data to Repository
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add insurance_preprocessing/
+          git diff --staged --quiet || git commit -m "Auto: update preprocessed dataset [skip ci]"
+          git push || echo "Nothing to push"
